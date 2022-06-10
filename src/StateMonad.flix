@@ -209,56 +209,129 @@ namespace StateMonadDemo {
 }
 
 
-/// namespace RandomMonadDemo {
+namespace RandomMonadDemo {
 
-///     pub enum MaxBound {
-///         case Exclusive, Inclusive
-///     }
+    pub enum MaxBound {
+        case Exclusive, Inclusive
+    }
 
-///     namespace MaxBound {
-///         use RandomMonadDemo.MaxBound;
-///         use RandomMonadDemo.MaxBound.Exclusive;
-///         use RandomMonadDemo.MaxBound.Inclusive;
+    pub enum Range {
+        case Range(Int32, Int32, MaxBound)
+    }
 
-///         pub def isExclusive(m: MaxBound): Bool = match m {
-///             case Exclusive => true
-///             case Inclusive => false
-///         }
-///     }
+    namespace MaxBound {
+        use RandomMonadDemo.MaxBound;
+        use RandomMonadDemo.MaxBound.Exclusive;
+        use RandomMonadDemo.MaxBound.Inclusive;
 
-///     pub enum RandomMonad[a] {
-///         case RandomMonad({min :: Int32}, Int32, MaxBound, Int32 -> (Int32, a))
-///     }
+        pub def isExclusive(m: MaxBound): Bool = match m {
+            case Exclusive => true
+            case Inclusive => false
+        }
+    }
 
-///     namespace RandomMonad {
-///         use RandomMonadDemo.RandomMonad;
-///         use RandomMonadDemo.RandomMonad.RandomMonad;
-///         use RandomMonadDemo.MaxBound;
-///         use RandomMonadDemo/MaxBound.isExclusive;
+    type alias RandomState = {state :: Int32, range :: Range}
 
-///         pub def nextInt(state: {state :: Int32}, min: {min :: Int32}, max: Int32, m: MaxBound): Int32 = {
-///             let range0state = state.state - min.min;
-///             let range0max = max - min.min + (if (isExclusive(m)) 0 else 1);
-///             let shuffle = (range0state * 13 + 17) mod range0max;
-///             shuffle + min.min
-///         }
+    pub enum RandomMonad[a: Type, ef: Bool] {
+        case RandomMonad(RandomState -> (RandomState, a) & ef)
+    }
 
-///         pub def newWithSeed
-///                 (seed: {seed :: Int32}, min: {min :: Int32}, max: Int32, m: MaxBound):
-///                 RandomMonad[Unit] =
-///         {
-///             RandomMonad({min = min.min}, max, m, initRoll -> (initRoll, ()))
-///         }
+    namespace RandomMonad {
+        use RandomMonadDemo.RandomState;
+        use RandomMonadDemo.RandomMonad;
+        use RandomMonadDemo.RandomMonad.RandomMonad;
+        use RandomMonadDemo.MaxBound;
+        use RandomMonadDemo/MaxBound.isExclusive;
+        use RandomMonadDemo.Range.Range;
+        use RandomMonadDemo.Range;
 
-///     }
+        /// OBS: This is not a good random generator
+        def nextIntAux(state: Int32, range: Range): {state :: Int32, roll :: Int32} = {
+            let Range(min, max, maxBound) = range;
+            let range0max = max - min + (if (isExclusive(maxBound)) 0 else 1);
+            let newState = (state * 11 + 17) mod 507;
+            let roll = (newState mod range0max) + min;
+            {state = newState, roll = roll}
+        }
 
-///     pub def test(): Unit = {
-///         use RandomMonadDemo/RandomMonad.nextInt;
-///         use RandomMonadDemo.MaxBound.Exclusive;
-///         use RandomMonadDemo/RandomMonad.newWithSeed;
+        pub def nextInt(): RandomMonad[Int32, Pure] = {
+            RandomMonad(randomState -> (
+                let rollRecord = nextIntAux(randomState.state, randomState.range);
+                ({state = rollRecord.state, range = randomState.range}, rollRecord.roll)
+            ))
+        }
 
-///         let rand = newWithSeed({seed = 42}, {min = 1}, 6, Exclusive);
-///         ???
-///     }
+        pub def run(seed: Int32, range: Range, m: RandomMonad[a, ef]): a & ef = {
+            let RandomMonad(f) = m;
+            let initState: RandomState = {state = seed, range = range};
+            let (_, res) = f(initState);
+            res
+        }
+    }
 
-/// }
+    instance DFunctor[RandomMonad] {
+        pub def map(f: a -> b & ef1, x: RandomMonad[a, ef2]): RandomMonad[b, ef1 and ef2] = {
+            RandomMonad(s1 -> (
+                let RandomMonad(xx) = x;
+                let (s2, xActual) = xx(s1);
+                (s2, f(xActual))
+            ))
+        }
+    }
+
+    instance DApplicative[RandomMonad] {
+    
+        pub def point(x: a): RandomMonad[a, true] =
+            RandomMonad(s -> (s, x))
+    
+        pub def ap
+                (f: RandomMonad[a -> b & ef1, ef2], x: RandomMonad[a, ef3]):
+                RandomMonad[b, ef1 and ef2 and ef3] =
+        {
+            RandomMonad(s1 -> (
+                let RandomMonad(ff) = f;
+                let RandomMonad(xx) = x;
+                let (s2, fActual) = ff(s1);
+                let (s3, xActual) = xx(s2);
+                (s3, fActual(xActual))
+            ))
+        }
+    }
+
+    instance DMonad[RandomMonad] {
+    
+        pub def flatMap
+                (f: a -> RandomMonad[b, ef1] & ef2, x: RandomMonad[a, ef3]):
+                RandomMonad[b, ef1 and ef2 and ef3] =
+        {
+            RandomMonad(s1 -> (
+                let RandomMonad(xx) = x;
+                let (s2, xActual) = xx(s1);
+                let RandomMonad(fx) = f(xActual);
+                fx(s2)
+            ))
+        }
+    
+    }
+
+    pub def test(): Float32 & Impure = {
+        use RandomMonadDemo.MaxBound.Inclusive;
+        use RandomMonadDemo/RandomMonad.nextInt;
+        use DApplicative.point;
+        use DFunctor.map;
+        use DMonad.flatMap;
+
+        let diceRange = Range(1, 6, Inclusive);
+        let rolls = List.range(0, 25) |>
+            List.foldLeft((m, _) -> (
+                let* l = m;
+                let* roll = nextInt();
+                println(roll);
+                (roll :: l)  |> point
+            ), point(Nil) |> map(x -> x as & Impure)) |> // hack to make init a impure monad
+            RandomMonadDemo/RandomMonad.run(1, diceRange);
+        def div(a, b) = Int32.toFloat32(a) / Int32.toFloat32(b);
+        List.sum(rolls) `div` List.length(rolls)
+    }
+
+}
