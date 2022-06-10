@@ -207,3 +207,58 @@ namespace StateMonadDemo {
     
     
 }
+
+
+/// namespace RandomMonadDemo {
+
+///     pub enum MaxBound {
+///         case Exclusive, Inclusive
+///     }
+
+///     namespace MaxBound {
+///         use RandomMonadDemo.MaxBound;
+///         use RandomMonadDemo.MaxBound.Exclusive;
+///         use RandomMonadDemo.MaxBound.Inclusive;
+
+///         pub def isExclusive(m: MaxBound): Bool = match m {
+///             case Exclusive => true
+///             case Inclusive => false
+///         }
+///     }
+
+///     pub enum RandomMonad[a] {
+///         case RandomMonad({min :: Int32}, Int32, MaxBound, Int32 -> (Int32, a))
+///     }
+
+///     namespace RandomMonad {
+///         use RandomMonadDemo.RandomMonad;
+///         use RandomMonadDemo.RandomMonad.RandomMonad;
+///         use RandomMonadDemo.MaxBound;
+///         use RandomMonadDemo/MaxBound.isExclusive;
+
+///         pub def nextInt(state: {state :: Int32}, min: {min :: Int32}, max: Int32, m: MaxBound): Int32 = {
+///             let range0state = state.state - min.min;
+///             let range0max = max - min.min + (if (isExclusive(m)) 0 else 1);
+///             let shuffle = (range0state * 13 + 17) mod range0max;
+///             shuffle + min.min
+///         }
+
+///         pub def newWithSeed
+///                 (seed: {seed :: Int32}, min: {min :: Int32}, max: Int32, m: MaxBound):
+///                 RandomMonad[Unit] =
+///         {
+///             RandomMonad({min = min.min}, max, m, initRoll -> (initRoll, ()))
+///         }
+
+///     }
+
+///     pub def test(): Unit = {
+///         use RandomMonadDemo/RandomMonad.nextInt;
+///         use RandomMonadDemo.MaxBound.Exclusive;
+///         use RandomMonadDemo/RandomMonad.newWithSeed;
+
+///         let rand = newWithSeed({seed = 42}, {min = 1}, 6, Exclusive);
+///         ???
+///     }
+
+/// }
