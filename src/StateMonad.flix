@@ -1,6 +1,30 @@
 use List.{append, reverse};
 
-namespace StateMonadExperiment {
+// The delayed functor/applicative/monad classes
+
+pub class DFunctor[m: Type -> Bool -> Type] {
+    pub def map[a: Type, b: Type, ef1: Bool, ef2: Bool]
+            (f: a -> b & ef1, x: m[a, ef2]): m[b, ef1 and ef2]
+}
+
+pub class DApplicative[m: Type -> Bool -> Type] with DFunctor[m] {
+
+    pub def point(x: a): m[a, Pure]
+
+    pub def ap[a: Type, b: Type, ef1: Bool, ef2: Bool, ef3: Bool]
+            (f: m[a -> b & ef1, ef2], x: m[a, ef3]):
+            m[b, ef1 and ef2 and ef3]
+
+}
+
+pub class DMonad[m: Type -> Bool -> Type] with DApplicative[m] {
+    pub def flatMap[a: Type, b: Type, ef1: Bool, ef2: Bool, ef3: Bool]
+            (f: a -> m[b, ef1] & ef2, x: m[a, ef3]):
+            m[b, ef1 and ef2 and ef3]
+}
+
+
+namespace StateMonadDemo {
 
     // 1st version: Naive pure state by explicit pass.
 
@@ -32,14 +56,18 @@ namespace StateMonadExperiment {
     // Assume the monad operations
 
     namespace StateMonad {
-        use StateMonadExperiment.StateMonad;
-        use StateMonadExperiment.StateMonad.StateMonad;
+        use StateMonadDemo.StateMonad;
+        use StateMonadDemo.StateMonad.StateMonad;
 
         pub def point(x: a): StateMonad[s, a, true] = ???
 
         pub def flatMap
                 (f: a -> StateMonad[s, b, ef1] & ef2, x: StateMonad[s, a, ef3]):
                 StateMonad[s, b, ef1 and ef2 and ef3] = ???
+
+        pub def runWith(init: s, m: StateMonad[s, a, ef]): (s, a) & ef =
+            let StateMonad(f) = m;
+            f(init)
 
     }
 
@@ -50,7 +78,7 @@ namespace StateMonadExperiment {
     }
 
     pub def appendReverseWithCount2(l1: List[a], l2: List[a]): StateMonad[Int32, List[a], Pure] = {
-        use StateMonadExperiment/StateMonad.flatMap;
+        use StateMonadDemo/StateMonad.flatMap;
         reverseWithCount2(l1) |> flatMap(revl1 ->
             reverseWithCount2(l2) |> flatMap(revl2 ->
                 StateMonad(count -> (count+1, revl1 `append` revl2))
@@ -62,7 +90,7 @@ namespace StateMonadExperiment {
             (l1: List[a], l2: List[a], l3: List[a]):
             StateMonad[Int32, List[a], Pure] =
     {
-        use StateMonadExperiment/StateMonad.flatMap;
+        use StateMonadDemo/StateMonad.flatMap;
         reverseWithCount2(l1) |> flatMap(revl1 ->
             reverseWithCount2(l2) |> flatMap(revl2 ->
                 reverseWithCount2(l3) |> flatMap(revl3 ->
@@ -73,11 +101,6 @@ namespace StateMonadExperiment {
     }
 
     // The delayed effect functor/applicative/monad and their implementations
-
-    pub class DFunctor[m: Type -> Bool -> Type] {
-        pub def map[a: Type, b: Type, ef1: Bool, ef2: Bool]
-                (f: a -> b & ef1, x: m[a, ef2]): m[b, ef1 and ef2]
-    }
 
     instance DFunctor[StateMonad[s]] {
         pub def map
@@ -90,16 +113,6 @@ namespace StateMonadExperiment {
                 (s2, f(res))
             )
         }
-    }
-
-    pub class DApplicative[m: Type -> Bool -> Type] with DFunctor[m] {
-        
-        pub def point(x: a): m[a, Pure]
-
-        pub def ap[a: Type, b: Type, ef1: Bool, ef2: Bool, ef3: Bool]
-                (f: m[a -> b & ef1, ef2], x: m[a, ef3]):
-                m[b, ef1 and ef2 and ef3]
-
     }
 
     instance DApplicative[StateMonad[s]] {
@@ -120,12 +133,6 @@ namespace StateMonadExperiment {
             ))
         }
     
-    }
-
-    pub class DMonad[m: Type -> Bool -> Type] with DApplicative[m] {
-        pub def flatMap[a: Type, b: Type, ef1: Bool, ef2: Bool, ef3: Bool]
-                (f: a -> m[b, ef1] & ef2, x: m[a, ef3]):
-                m[b, ef1 and ef2 and ef3]
     }
 
     instance DMonad[StateMonad[s]] {
@@ -153,22 +160,22 @@ namespace StateMonadExperiment {
         StateMonad(_ -> (x, ()))
 
     pub def modify(f: s -> s & ef): StateMonad[s, Unit, ef] =
-        use StateMonadExperiment/DMonad.flatMap;
-        use StateMonadExperiment/DFunctor.map;
+        use DMonad.flatMap;
+        use DFunctor.map;
         get() |> map(f) |> flatMap(put)
     
     // 3rd version: with nice methods
 
     pub def reverseWithCount3(l: List[a]): StateMonad[Int32, List[a], Pure] = {
-        use StateMonadExperiment/DApplicative.point;
-        use StateMonadExperiment/DFunctor.map;
+        use DApplicative.point;
+        use DFunctor.map;
         // could be shorter with productRight from applicative
         modify(s -> s+1) |> map(_ -> reverse(l))
     }
 
     pub def appendReverseWithCount3(l1: List[a], l2: List[a]): StateMonad[Int32, List[a], Pure] = {
-        use StateMonadExperiment/DMonad.flatMap;
-        use StateMonadExperiment/DFunctor.map;
+        use DMonad.flatMap;
+        use DFunctor.map;
         let* revl1 = reverseWithCount3(l1);
         let* revl2 = reverseWithCount3(l2);
         modify(s -> s+1) |>
@@ -179,13 +186,23 @@ namespace StateMonadExperiment {
             (l1: List[a], l2: List[a], l3: List[a]):
             StateMonad[Int32, List[a], Pure] =
     {
-        use StateMonadExperiment/DMonad.flatMap;
-        use StateMonadExperiment/DFunctor.map;
+        use DMonad.flatMap;
+        use DFunctor.map;
         let* revl1 = reverseWithCount3(l1);
         let* revl2 = reverseWithCount3(l2);
         let* revl3 = reverseWithCount3(l3);
         modify(s -> s+1) |>
             map(_ -> revl1 `append` revl2 `append` revl3)
+    }
+
+    pub def test(): Unit & Impure = {
+        use StateMonadDemo/StateMonad.runWith;
+        let l1 = 1 :: 2 :: Nil;
+        let l2 = 2 :: 3 :: Nil;
+        let l3 = 5 :: 4 :: Nil;
+        append3ReverseWithCount3(l1, l2, l3) |>
+            runWith(0) |>
+            println 
     }
     
     
